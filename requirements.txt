@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+streamlit
+sentence-transformers
+scikit-learn
+pandas
+reportlab
+PyPDF2
+bcrypt
