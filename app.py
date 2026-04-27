@@ -1,5 +1,5 @@
 import streamlit as st
-import requests
+st.set_page_config(layout="wide")
 import base64
 from PyPDF2 import PdfReader
 from sentence_transformers import SentenceTransformer
@@ -7,11 +7,13 @@ from sklearn.metrics.pairwise import cosine_similarity
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.graphics.shapes import Drawing
+from reportlab.graphics.charts.barcharts import VerticalBarChart
+from reportlab.lib import colors
 import io
-import hashlib
 import pandas as pd
-import sqlite3
 import bcrypt
+import ast
 
 from database import create_tables, connect_db
 create_tables()
@@ -19,21 +21,37 @@ create_tables()
 # ================= AUTH =================
 
 def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt())
+
+def check_password(password, hashed):
+    if isinstance(hashed, str):
+        hashed = hashed.encode()   # 🔥 convert back to bytes
+    return bcrypt.checkpw(password.encode(), hashed)
+
+import re
+
+def is_valid_email(email):
+    return re.match(r"[^@]+@[^@]+\.[^@]+", email)
+
+def is_strong_password(password):
+    return len(password) >= 6
+
 
 def register_user(email, password):
     conn = connect_db()
     cursor = conn.cursor()
+
+    hashed = hash_password(password)
+
     try:
         cursor.execute(
             "INSERT INTO users (email, password) VALUES (?, ?)",
-            (email, hash_password(password))
+            (email, hashed)
         )
         conn.commit()
         return True
-    
-    except sqlite3.IntegrityError:
-       return False
+    except:
+        return False
 
     finally:
         conn.close()
@@ -41,13 +59,17 @@ def register_user(email, password):
 def login_user(email, password):
     conn = connect_db()
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM users WHERE email=? AND password=?",
-        (email, hash_password(password))
-    )
+
+    cursor.execute("SELECT id, password FROM users WHERE email=?", (email,))
     user = cursor.fetchone()
-    conn.close()
-    return user
+
+    if user:
+        user_id, stored_password = user
+
+        if check_password(password, stored_password):
+            return user_id
+
+    return None
 
 # ================= UTIL =================
 
@@ -63,9 +85,9 @@ def save_history(user_id, resume, job, final_score, semantic, skill, matched, mi
         user_id,
         resume,
         job,
-        final_score,
-        semantic,
-        skill,
+        float(final_score),
+        float(semantic),
+        float(skill),
         str(matched),
         str(missing)
     ))
@@ -73,18 +95,86 @@ def save_history(user_id, resume, job, final_score, semantic, skill, matched, mi
     conn.commit()
     conn.close()
 
-def create_pdf(report_text):
+def create_pdf(final_score, matched, missing, semantic, skill):
+
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
+
     styles = getSampleStyleSheet()
+    title_style = styles["Heading1"]
+    section_style = styles["Heading2"]
+    normal = styles["Normal"]
 
     content = []
-    for line in report_text.split("\n"):
-        content.append(Paragraph(line, styles["Normal"]))
-        content.append(Spacer(1, 10))
 
+    # ===== TITLE =====
+    content.append(Paragraph("📄 Job Match Analysis Report", title_style))
+    content.append(Spacer(1, 20))
+
+    # ===== SCORE =====
+    content.append(Paragraph("📊 Overall Score", section_style))
+    content.append(Paragraph(f"<b>{final_score*100:.2f}%</b>", normal))
+    content.append(Spacer(1, 10))
+
+    content.append(Paragraph(f"Semantic Score: {semantic*100:.2f}%", normal))
+    content.append(Paragraph(f"Skill Match Score: {skill*100:.2f}%", normal))
+    content.append(Spacer(1, 20))
+
+    # ===== MATCHED =====
+    content.append(Paragraph("✅ Matched Skills", section_style))
+    if matched:
+        for m in matched:
+            content.append(Paragraph(f"• {m}", normal))
+    else:
+        content.append(Paragraph("No matched skills", normal))
+    content.append(Spacer(1, 20))
+
+    # ===== MISSING =====
+    content.append(Paragraph("🚨 Missing Skills", section_style))
+    if missing:
+        for m in missing:
+            content.append(Paragraph(f"• {m}", normal))
+    else:
+        content.append(Paragraph("No missing skills 🎉", normal))
+    content.append(Spacer(1, 20))
+
+    # ===== INSIGHT =====
+    content.append(Paragraph("🧠 Insights", section_style))
+
+    if final_score > 0.7:
+        insight = "Strong match! You are well aligned with the job."
+    elif final_score > 0.4:
+        insight = "Moderate match. Improve key missing skills."
+    else:
+        insight = "Low match. Significant improvement needed."
+
+    content.append(Paragraph(insight, normal))
+
+    # ===== CHART =====
+    drawing = Drawing(400, 200)
+
+    chart = VerticalBarChart()
+    chart.x = 50
+    chart.y = 50
+    chart.height = 100
+    chart.width = 300
+
+    chart.data = [[semantic*100, skill*100, final_score*100]]
+    chart.categoryAxis.categoryNames = ['Semantic', 'Skill', 'Final']
+
+    chart.bars[0].fillColor = colors.blue
+
+    drawing.add(chart)
+
+    content.append(Paragraph("📊 Score Breakdown", section_style))
+    content.append(Spacer(1, 10))
+    content.append(drawing)
+    content.append(Spacer(1, 20))
+
+    # ===== BUILD =====
     doc.build(content)
     buffer.seek(0)
+
     return buffer
 
 def set_background(image_file):
@@ -481,10 +571,61 @@ model = load_model()
 def get_embedding(text):
     return model.encode([text])
 
+
+def calculate_score(similarity, skill_score, matched, missing, job_skills):
+    penalty = 0
+
+    critical_skills = job_skills[:2]
+    for skill in critical_skills:
+        if skill in missing:
+            penalty += 0.1
+
+    bonus = 0
+    if len(matched) > len(job_skills) * 0.7:
+        bonus = 0.05
+
+    final = (0.6 * similarity) + (0.4 * skill_score) + bonus - penalty
+
+    return max(0, min(final, 1))
+
+
+def match_resume_job(resume, job):
+
+    resume_emb = get_embedding(resume)
+    job_emb = get_embedding(job)
+
+    similarity = cosine_similarity(resume_emb, job_emb)[0][0]
+
+    resume_skills = extract_skills(resume)
+    job_skills = extract_skills(job)
+
+    matched = list(set(resume_skills) & set(job_skills))
+    missing = [s for s in job_skills if s not in resume_skills]
+
+    skill_score = len(matched) / (len(job_skills) if job_skills else 1)
+
+    final_score = calculate_score(
+        similarity,
+        skill_score,
+        matched,
+        missing,
+        job_skills
+    )
+
+    return {
+        "final_score": round(final_score, 2),
+        "semantic_score": round(similarity, 2),
+        "skill_score": round(skill_score, 2),
+        "matched_skills": matched,
+        "missing_skills": missing,
+        "top_missing": missing[:3]
+    }
+
 # ================= LOGIN =================
 
 if "user" not in st.session_state:
     st.session_state.user = None
+    st.session_state.logged_in = False
 
 st.sidebar.title("🔐 Login")
 
@@ -494,34 +635,61 @@ password = st.sidebar.text_input("Password", type="password")
 
 if menu == "Register":
     if st.sidebar.button("Register"):
-        if register_user(email, password):
-            st.sidebar.success("Registered!")
+
+        if not is_valid_email(email):
+            st.sidebar.error("Invalid email format")
+
+        elif not is_strong_password(password):
+            st.sidebar.error("Password must be at least 6 characters")
+
         else:
-            st.sidebar.error("User exists")
+            if register_user(email, password):
+                st.sidebar.success("Registered!")
+            else:
+                st.sidebar.error("User already exists")
 
 elif menu == "Login":
     if st.sidebar.button("Login"):
-        user = login_user(email, password)
-        if user:
-            st.session_state.user = user
-            st.sidebar.success("Logged in!")
+
+        if not is_valid_email(email):
+            st.sidebar.error("Invalid email format")
+
         else:
-            st.sidebar.error("Invalid credentials")
+            user = login_user(email, password)
+
+            if user:
+                st.session_state.user = user
+                st.session_state.logged_in = True
+                st.sidebar.success("Logged in!")
+            else:
+                st.sidebar.error("Invalid credentials")
 
 # ================= MAIN APP =================
 
-if st.session_state.user:
+if st.session_state.get("logged_in"):
+    st.success("Welcome back! 👋") 
 
     set_background("better.PNG")
 
     if st.button("Logout"):
-        st.session_state.user = None
+        st.session_state.clear()
+        st.success("Logged out successfully")
         st.rerun()
 
-    st.markdown("## 🤖 Intelligent Candidate Screening System")
+    st.markdown("""
+    # 🤖 Intelligent Candidate Screening System
+    ### AI-powered Resume Analyzer & Job Matcher
+    """)
+    st.markdown("---")
 
     uploaded_file = st.file_uploader("Upload Resume", type=["pdf"])
     job = st.text_area("Enter Job Description")
+
+    if not uploaded_file:
+        st.info("📄 Upload your resume to begin")
+
+    if not job:
+        st.info("📝 Enter job description")
 
     resume = ""
 
@@ -537,24 +705,8 @@ if st.session_state.user:
             job_lower = job.lower()
 
             resume_emb = get_embedding(resume_lower)
+            data = match_resume_job(resume_lower, job_lower)
 
-            try:
-                response = requests.post(
-                    "http://127.0.0.1:8000/match",
-                    json={
-                        "resume": resume_lower,
-                        "job": job_lower
-                    }
-                )
-
-                if response.status_code == 200:
-                    data = response.json()
-                else:
-                    st.error("API error")
-                    st.stop()
-            except requests.exceptions.RequestException:
-               st.error("🚨 FastAPI server not running!")
-               st.stop()
 
             final_score = data["final_score"]
             similarity = data["semantic_score"]
@@ -567,23 +719,22 @@ if st.session_state.user:
 
             st.subheader("📊 Why this score?")
 
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
 
-            with col1: 
-                st.markdown("### 🧠 Semantic Match")
-                st.progress(float(similarity))
-                st.caption(f"{float(similarity)*100:.1f}%")
+            with col1:
+                st.metric("🎯 Final Score", f"{float(final_score)*100:.1f}%")
 
             with col2:
-                st.markdown("### 🧩 Skill Match")
-                st.progress(float(skill_score))
-                st.caption(f"{float(skill_score)*100:.1f}%")
+                st.metric("🧠 Semantic", f"{float(similarity)*100:.1f}%")
+
+            with col3:
+                st.metric("🧩 Skills", f"{float(skill_score)*100:.1f}%")
 
             st.info(
                 "Final score is calculated as: 60% semantic similarity + 40% skill match"
             )
 
-            user_id = st.session_state.user[0]
+            user_id = st.session_state.user
             save_history(
                 user_id,
                 resume[:1000],
@@ -597,7 +748,16 @@ if st.session_state.user:
 
             st.subheader(f"Final Score: {final_score:.2f}")
             st.write(f"Semantic: {similarity:.2f} | Skill: {skill_score:.2f}")
-            st.progress(int(final_score * 100))  
+            st.progress(int(final_score * 100))
+
+            st.subheader("📊 Score Visualization")
+
+            chart_data = pd.DataFrame({
+                "Scores": [similarity, skill_score, final_score]
+            }, index=["Semantic", "Skill", "Final"])
+
+            st.bar_chart(chart_data)
+            st.markdown("---")  
 
             # Skills
             st.write("Resume Skills:", resume_skills)
@@ -605,11 +765,15 @@ if st.session_state.user:
 
             top_missing = data.get("top_missing", missing[:3])
 
-            st.subheader("✅ Matched Skills")
-            st.write(matched)
+            with st.expander("📄 Detailed Skill Analysis"):
 
-            st.subheader("🚨 Missing Skills")
-            st.write(missing)
+                st.subheader("✅ Matched Skills")
+                for skill in matched:
+                    st.success(f"✔ {skill}")
+
+                st.subheader("🚨 Missing Skills")
+                for skill in missing:
+                    st.error(f"✖ {skill}")
 
             if len(missing) > 5:
                 st.warning("🚨 You are missing several key skills for this role")
@@ -629,6 +793,7 @@ if st.session_state.user:
                 st.success("🎉 You already match all required skills!")
 
             # Job matching
+            st.markdown("---")
             st.subheader("Top Jobs")
 
             scores = []
@@ -649,17 +814,26 @@ if st.session_state.user:
                 score = 0.6 * semantic_score + 0.4 * skill_score_temp
                 scores.append((j["title"], score))
                 
-            scores.sort(key=lambda x: x[1], reverse=True)    
+            scores.sort(key=lambda x: x[1], reverse=True) 
+
+            st.subheader("🏆 Top Job Matches")
+
             for j, s in scores[:3]:
-                st.write(f"{j} → {s:.2f}")
+                st.markdown(f"""
+                ### 💼 {j}
+                Match Score: **{s*100:.1f}%**
+                """)
+                st.progress(float(s))
+                st.markdown("---")
 
             # PDF
-            report = f"""
-            Score: {final_score}
-            Skills: {resume_skills}
-            Missing: {missing}
-            """
-            pdf = create_pdf(report)
+            pdf = create_pdf(
+                final_score,
+                matched,
+                missing,
+                similarity,
+                skill_score
+            )
 
             st.download_button("Download Report", pdf, "report.pdf")
 
@@ -667,13 +841,13 @@ if st.session_state.user:
             st.warning("Enter both Resume and Job")
         
     # ===== 📊 ADD HISTORY BLOCK HERE =====
-
+    st.markdown("---")
     st.subheader("📊 Your Past Analyses")
 
     conn = connect_db()
     cursor = conn.cursor()
 
-    user_id = st.session_state.user[0]
+    user_id = st.session_state.user
 
     cursor.execute("""
         SELECT resume, job, similarity, semantic_score, skill_score, matched_skills, missing_skills, created_at
@@ -690,7 +864,7 @@ if st.session_state.user:
 
     for r in rows:
         try:
-            missing_list = eval(r[7]) if len(r) > 7 else []
+            missing_list = ast.literal_eval(r[6]) if len(r) > 6 else []
             all_missing.extend(missing_list)
         except:
             continue
@@ -708,7 +882,7 @@ if st.session_state.user:
             continue   # skip corrupted row
 
         st.markdown(f"### 🧠 Score: {score:.2f}")
-        st.caption(f"⏱ {r[3]}")
+        st.caption(f"⏱ {r[7]}")
         st.write(f"📄 {r[1][:120]}...")
         st.markdown("---")
 
@@ -730,7 +904,8 @@ if st.session_state.user:
                "time"
             ]
         )
-        df["score"] = df["score"].astype(float)
+        df["score"] = pd.to_numeric(df["score"], errors="coerce")
+        df = df.dropna(subset=["score"])
         df["time"] = pd.to_datetime(df["time"])
 
         st.write("### 📅 Filter by Date")
@@ -771,7 +946,7 @@ if st.session_state.user:
             st.metric("📉 Worst Score", f"{df_filtered['score'].min():.2f}")
 
 # ================= TREND =================
-        st.write("### 📊 Score Trend Over Time")
+        st.subheader("📈 Performance Trend")
 
         df_sorted = df_filtered.sort_values("time")
         st.line_chart(df_sorted.set_index("time")["score"])
@@ -815,3 +990,6 @@ if st.session_state.user:
     
 else:
     st.warning("🔐 Please login to continue")
+
+st.markdown("---")
+st.caption("🚀 Built with AI | Intelligent Candidate Screening System")
