@@ -1,114 +1,80 @@
 # 🚀 Intelligent Candidate Screening & Job Recommendation System
 
-A smart system that analyzes resumes and recommends relevant jobs using **NLP + semantic similarity + skill matching**.
+🌐 **Live Demo:** https://job-recommendation-system-c6vphtz8yji3yd7qxaecz5.streamlit.app/
+
+---
+
+## 📌 Overview
+
+A smart AI-powered system that analyzes resumes and recommends relevant jobs using:
+
+- 🧠 NLP (Sentence Transformers)
+- 🔍 Semantic Similarity
+- 🧩 Skill Matching
+- 📊 Analytics Dashboard
+
+Built as a **full-stack Streamlit application** with an integrated backend (no separate API required).
 
 ---
 
 ## 🔥 Features
 
-* 📄 Resume parsing (PDF support)
-* 🤖 Semantic similarity using Sentence Transformers
-* 🧠 Skill-based matching
-* 📊 Scoring system (semantic + skill score)
-* 📈 Analytics dashboard (Streamlit)
-* ⚡ FastAPI backend for API endpoints
-* 🔐 (Optional) Authentication system
+- 📄 Resume parsing (PDF support)
+- 🧠 Semantic similarity matching
+- 🧩 Skill-based job matching
+- 🎯 Hybrid scoring system (semantic + skill score)
+- 📊 Interactive analytics dashboard
+- 📈 Score visualization (charts)
+- 📜 PDF report generation (professional format)
+- 🔐 Secure authentication (bcrypt)
+- 🗄 SQLite database integration
 
 ---
 
-## 🛠️ Tech Stack
+## 🛠 Tech Stack
 
-* Python
-* FastAPI
-* Streamlit
-* Sentence Transformers
-* Scikit-learn
-* Pandas
-* SQLite
-* PyPDF2 / ReportLab
-
----
-
-## 📂 Project Structure
-
-```
-job-recommendation-system/
-│
-├── app.py              # Streamlit UI
-├── api.py              # FastAPI backend
-├── database.py         # Database logic
-├── requirements.txt
-├── projyA.db
-├── better.png          # UI preview
-└── .gitignore
-```
+- **Frontend & Backend:** Streamlit
+- **Database:** SQLite
+- **NLP Model:** Sentence Transformers
+- **ML Utilities:** Scikit-learn
+- **PDF Processing:** PyPDF2
+- **PDF Generation:** ReportLab
+- **Authentication:** bcrypt
 
 ---
 
-## ⚙️ Installation
+## ⚙️ How It Works
 
-```bash
-git clone https://github.com/your-username/job-recommendation-system.git
-cd job-recommendation-system
-pip install -r requirements.txt
-```
-
----
-
-## ▶️ Run the App
-
-### Run Streamlit UI
-
-```bash
-streamlit run app.py
-```
-
-### Run FastAPI backend
-
-```bash
-uvicorn api:app --reload
-```
+1. User uploads resume (PDF)
+2. System extracts text
+3. Compares with job descriptions
+4. Calculates:
+   - Semantic similarity
+   - Skill matching score
+5. Generates:
+   - Final score
+   - Missing skills
+   - Recommendations
+6. Stores history in database
+7. Displays analytics dashboard
 
 ---
 
-## 📊 How It Works
+## 📊 Dashboard Features
 
-1. Upload resume (PDF)
-2. Extract text
-3. Compare with job descriptions
-4. Calculate:
-
-   * Semantic similarity
-   * Skill match score
-5. Recommend best jobs
+- 📈 Score trends
+- 📊 Bar chart visualization
+- 🕒 History tracking
+- 🎯 Performance metrics
 
 ---
 
-## 📸 Demo
+## 🔐 Authentication
 
-(Add your screenshot here 👇)
-
-![App Screenshot](better.png)
-
----
-
-## 📌 Future Improvements (Phase 2)
-
-* User login system
-* Dashboard analytics
-* Multi-job recommendations
-* Better ranking algorithm
-* Deployment (Streamlit Cloud / Render)
+- User registration & login
+- Password hashing using bcrypt
+- Secure user-specific history
 
 ---
 
-## 👨‍💻 Author
-
-Bharath
-GitHub: https://github.com/Bharathk-2003
-
----
-
-## ⭐ If you like this project
-
-Give it a star ⭐ on GitHub!
+## 📁 Project Structure
