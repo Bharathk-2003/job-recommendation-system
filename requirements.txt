@@ -1,7 +1,9 @@
 streamlit
-sentence-transformers
-scikit-learn
+plotly
 pandas
-reportlab
+numpy
+scikit-learn
+sentence-transformers
 PyPDF2
+reportlab
 bcrypt
