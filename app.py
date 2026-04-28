@@ -15,6 +15,13 @@ import io
 import pandas as pd
 import bcrypt
 import ast
+import joblib
+
+try:
+    ml_model = joblib.load("model.pkl")
+except Exception as e:
+    ml_model = None
+    print("Model load failed:", e)
 
 st.set_page_config(
     page_title="AI Job Recommender",
@@ -701,7 +708,9 @@ def extract_text_from_pdf(file):
     reader = PdfReader(file)
     text = ""
     for page in reader.pages:
-        text += page.extract_text()
+        page_text = page.extract_text()
+        if page_text:
+            text += page_text
     return text
 
 def extract_skills(text):
@@ -765,13 +774,29 @@ def match_resume_job(resume, job):
 
     skill_score = len(matched) / (len(job_skills) if job_skills else 1)
 
-    final_score = calculate_score(
+    features = [[
         similarity,
         skill_score,
-        matched,
-        missing,
-        job_skills
-    )
+        len(matched),
+        len(missing)
+    ]]
+
+    if ml_model:
+        pred = ml_model.predict(features)[0]
+
+        if pred == 1:
+            final_score = 0.7 + (0.2 * similarity)
+        else:
+            final_score = 0.3 * similarity
+    else:
+        final_score = calculate_score(
+            similarity,
+            skill_score,
+            matched,
+            missing,
+            job_skills
+        )
+        final_score = max(0, min(final_score, 1))
 
     return {
         "final_score": round(final_score, 2),
@@ -896,8 +921,8 @@ if st.session_state.get("logged_in"):
 
             top_missing = data.get("top_missing", missing[:3])
 
-            resume_skills = matched
-            job_skills = matched + missing
+            resume_skills = extract_skills(resume_lower)
+            job_skills = extract_skills(job_lower)
 
             st.markdown('<div class="glass">', unsafe_allow_html=True)
 
@@ -915,7 +940,7 @@ if st.session_state.get("logged_in"):
                 with col3:
                     st.metric("🧩 Skills", f"{skill_score*100:.1f}%")
 
-                st.progress(int(final_score * 100))
+                st.progress(min(int(final_score * 100), 100))
 
             with right:
                 st.markdown("### 🚀 Suggestions")
@@ -923,12 +948,16 @@ if st.session_state.get("logged_in"):
                     for s in top_missing:
                         st.markdown(f"**{s}**")
                         st.caption(skill_suggestions.get(s, "Improve this skill"))
+                else:
+                    st.success("🎉 No major gaps!")
 
             st.markdown('</div>', unsafe_allow_html=True)
+            st.caption("🤖 ML model used" if ml_model else "⚙️ Rule-based scoring")
 
-            st.info(
-                "Final score is calculated as: 60% semantic similarity + 40% skill match"
-            )
+            if ml_model:
+                st.info("Final score predicted using Machine Learning model")
+            else:
+                st.info("Final score calculated using rule-based method")
 
             user_id = st.session_state.user
             save_history(
@@ -1027,15 +1056,6 @@ if st.session_state.get("logged_in"):
                 st.info("⚡ You are close! Improve a few important skills")
             else:
                 st.success("🔥 Strong match! Only minor improvements needed")
-
-            # Suggestions
-            if missing:
-
-                for s in top_missing:
-                    st.markdown(f"### {s}")
-                    st.caption(skill_suggestions.get(s, "Learn this skill with projects"))
-            else:
-                st.success("🎉 You already match all required skills!")
 
             # Job matching
             st.markdown("---")
