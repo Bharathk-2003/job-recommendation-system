@@ -1,0 +1,265 @@
+alias,actual
+py,python
+python3,python
+js,javascript
+ts,typescript
+ml,machine learning
+dl,deep learning
+ai,machine learning
+reactjs,react
+react.js,react
+nextjs,next.js
+node,node.js
+nodejs,node.js
+expressjs,express
+springboot,spring boot
+sklearn,scikit-learn
+tf,tensorflow
+torch,pytorch
+aws cloud,aws
+amazon web services,aws
+aws ec2,aws
+aws s3,aws
+google cloud,gcp
+gcloud,gcp
+gcp cloud,gcp
+postgres,postgresql
+postgres db,postgresql
+mysql db,mysql
+mongo,mongodb
+mongo db,mongodb
+nosql,mongodb
+ci cd,ci/cd
+continuous integration,ci/cd
+continuous deployment,ci/cd
+natural language processing,nlp
+nlp models,nlp
+llms,llm
+large language model,llm
+structured query language,sql
+restful api,rest api
+rest apis,rest api
+api dev,rest api
+data wrangling,data analysis
+data viz,data analysis
+analytics,data science
+data analytics,data science
+ml models,machine learning
+deep neural networks,deep learning
+nn,deep learning
+pandas library,pandas
+numpy library,numpy
+docker containers,docker
+containers,docker
+container orchestration,kubernetes
+k8s,kubernetes
+linux os,linux
+unix,linux
+oop,object oriented programming
+dsa,data structures
+algo,algorithms
+frontend,frontend development
+backend,backend development
+devops,devops engineering
+ui ux,ui/ux
+ux design,ui/ux
+cyber sec,cybersecurity
+sec,security
+py tools,python
+py framework,python
+py tech,python
+python3 tools,python
+python3 framework,python
+python3 tech,python
+js tools,javascript
+js framework,javascript
+js tech,javascript
+ts tools,typescript
+ts framework,typescript
+ts tech,typescript
+ml tools,machine learning
+ml framework,machine learning
+ml tech,machine learning
+dl tools,deep learning
+dl framework,deep learning
+dl tech,deep learning
+ai tools,machine learning
+ai framework,machine learning
+ai tech,machine learning
+reactjs tools,react
+reactjs framework,react
+reactjs tech,react
+react.js tools,react
+react.js framework,react
+react.js tech,react
+nextjs tools,next.js
+nextjs framework,next.js
+nextjs tech,next.js
+node tools,node.js
+node framework,node.js
+node tech,node.js
+nodejs tools,node.js
+nodejs framework,node.js
+nodejs tech,node.js
+expressjs tools,express
+expressjs framework,express
+expressjs tech,express
+springboot tools,spring boot
+springboot framework,spring boot
+springboot tech,spring boot
+sklearn tools,scikit-learn
+sklearn framework,scikit-learn
+sklearn tech,scikit-learn
+tf tools,tensorflow
+tf framework,tensorflow
+tf tech,tensorflow
+torch tools,pytorch
+torch framework,pytorch
+torch tech,pytorch
+aws cloud tools,aws
+aws cloud framework,aws
+aws cloud tech,aws
+amazon web services tools,aws
+amazon web services framework,aws
+amazon web services tech,aws
+aws ec2 tools,aws
+aws ec2 framework,aws
+aws ec2 tech,aws
+aws s3 tools,aws
+aws s3 framework,aws
+aws s3 tech,aws
+google cloud tools,gcp
+google cloud framework,gcp
+google cloud tech,gcp
+gcloud tools,gcp
+gcloud framework,gcp
+gcloud tech,gcp
+gcp cloud tools,gcp
+gcp cloud framework,gcp
+gcp cloud tech,gcp
+postgres tools,postgresql
+postgres framework,postgresql
+postgres tech,postgresql
+postgres db tools,postgresql
+postgres db framework,postgresql
+postgres db tech,postgresql
+mysql db tools,mysql
+mysql db framework,mysql
+mysql db tech,mysql
+mongo tools,mongodb
+mongo framework,mongodb
+mongo tech,mongodb
+mongo db tools,mongodb
+mongo db framework,mongodb
+mongo db tech,mongodb
+nosql tools,mongodb
+nosql framework,mongodb
+nosql tech,mongodb
+ci cd tools,ci/cd
+ci cd framework,ci/cd
+ci cd tech,ci/cd
+continuous integration tools,ci/cd
+continuous integration framework,ci/cd
+continuous integration tech,ci/cd
+continuous deployment tools,ci/cd
+continuous deployment framework,ci/cd
+continuous deployment tech,ci/cd
+natural language processing tools,nlp
+natural language processing framework,nlp
+natural language processing tech,nlp
+nlp models tools,nlp
+nlp models framework,nlp
+nlp models tech,nlp
+llms tools,llm
+llms framework,llm
+llms tech,llm
+large language model tools,llm
+large language model framework,llm
+large language model tech,llm
+structured query language tools,sql
+structured query language framework,sql
+structured query language tech,sql
+restful api tools,rest api
+restful api framework,rest api
+restful api tech,rest api
+rest apis tools,rest api
+rest apis framework,rest api
+rest apis tech,rest api
+api dev tools,rest api
+api dev framework,rest api
+api dev tech,rest api
+data wrangling tools,data analysis
+data wrangling framework,data analysis
+data wrangling tech,data analysis
+data viz tools,data analysis
+data viz framework,data analysis
+data viz tech,data analysis
+analytics tools,data science
+analytics framework,data science
+analytics tech,data science
+data analytics tools,data science
+data analytics framework,data science
+data analytics tech,data science
+ml models tools,machine learning
+ml models framework,machine learning
+ml models tech,machine learning
+deep neural networks tools,deep learning
+deep neural networks framework,deep learning
+deep neural networks tech,deep learning
+nn tools,deep learning
+nn framework,deep learning
+nn tech,deep learning
+pandas library tools,pandas
+pandas library framework,pandas
+pandas library tech,pandas
+numpy library tools,numpy
+numpy library framework,numpy
+numpy library tech,numpy
+docker containers tools,docker
+docker containers framework,docker
+docker containers tech,docker
+containers tools,docker
+containers framework,docker
+containers tech,docker
+container orchestration tools,kubernetes
+container orchestration framework,kubernetes
+container orchestration tech,kubernetes
+k8s tools,kubernetes
+k8s framework,kubernetes
+k8s tech,kubernetes
+linux os tools,linux
+linux os framework,linux
+linux os tech,linux
+unix tools,linux
+unix framework,linux
+unix tech,linux
+oop tools,object oriented programming
+oop framework,object oriented programming
+oop tech,object oriented programming
+dsa tools,data structures
+dsa framework,data structures
+dsa tech,data structures
+algo tools,algorithms
+algo framework,algorithms
+algo tech,algorithms
+frontend tools,frontend development
+frontend framework,frontend development
+frontend tech,frontend development
+backend tools,backend development
+backend framework,backend development
+backend tech,backend development
+devops tools,devops engineering
+devops framework,devops engineering
+devops tech,devops engineering
+ui ux tools,ui/ux
+ui ux framework,ui/ux
+ui ux tech,ui/ux
+ux design tools,ui/ux
+ux design framework,ui/ux
+ux design tech,ui/ux
+cyber sec tools,cybersecurity
+cyber sec framework,cybersecurity
+cyber sec tech,cybersecurity
+sec tools,security
+sec framework,security
+sec tech,security

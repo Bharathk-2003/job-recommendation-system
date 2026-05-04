@@ -12,22 +12,97 @@ from reportlab.graphics.shapes import Drawing
 from reportlab.graphics.charts.barcharts import VerticalBarChart
 from reportlab.lib import colors
 import io
+import os
 import pandas as pd
 import bcrypt
 import ast
-import joblib
+import google.generativeai as genai 
 
-try:
-    ml_model = joblib.load("model.pkl")
-except Exception as e:
-    ml_model = None
-    print("Model load failed:", e)
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+gemini_model = genai.GenerativeModel("models/gemini-flash-latest")
+
+@st.cache_data
+def load_csv_data():
+    skills_df = pd.read_csv("skill_list.csv")
+    alias_df = pd.read_csv("aliases.csv")
+    suggestions_df = pd.read_csv("skill_suggestions.csv")
+    jobs_df = pd.read_csv("jobs.csv")
+
+    return skills_df, alias_df, suggestions_df, jobs_df
+
+def find_column(df, possible_names):
+    for col in df.columns:
+        if col.strip().lower() in possible_names:
+            return col
+    return None
+
+skills_df, alias_df, suggestions_df, jobs_df = load_csv_data()
+
+# Skills
+skill_col = find_column(skills_df, ["skill", "skills"])
+
+if skill_col is None:
+    st.error(f"❌ skill_list.csv must contain column: skill")
+    st.stop()
+
+skills_list_flat = skills_df[skill_col].astype(str).str.lower().tolist()
+
+# Aliases
+alias_col = find_column(alias_df, ["alias"])
+actual_col = find_column(alias_df, ["actual", "skill"])
+
+if alias_col is None or actual_col is None:
+    st.error("❌ aliases.csv must contain columns: alias, actual")
+    st.stop()
+
+skill_aliases = dict(
+    zip(alias_df[alias_col].astype(str).str.lower(),
+        alias_df[actual_col].astype(str).str.lower())
+)
+
+# Suggestions
+skill_col_sug = find_column(suggestions_df, ["skill"])
+suggestion_col = find_column(suggestions_df, ["suggestion", "description"])
+link_col = find_column(suggestions_df, ["link", "url"])
+
+if skill_col_sug is None or suggestion_col is None or link_col is None:
+    st.error("❌ skill_suggestions.csv must contain: skill, suggestion, link")
+    st.stop()
+
+skill_suggestions = {}
+
+for _, row in suggestions_df.iterrows():
+    skill = str(row[skill_col_sug]).strip().lower()
+    suggestion = str(row[suggestion_col]).strip()
+    link = str(row[link_col]).strip()
+
+    skill_suggestions[skill] = {
+        "suggestion": suggestion,
+        "link": link
+    }
+
+# Jobs
+title_col = find_column(jobs_df, ["title", "job", "role"])
+skills_col = find_column(jobs_df, ["skills", "skill"])
+
+if title_col is None or skills_col is None:
+    st.error("❌ jobs.csv must contain: title, skills")
+    st.stop()
+
+jobs = []
+for _, row in jobs_df.iterrows():
+    jobs.append({
+        "title": str(row[title_col]),
+        "skills": [s.strip().lower() for s in str(row[skills_col]).split(",")]
+    })
 
 st.set_page_config(
     page_title="AI Job Recommender",
     page_icon="🚀",
     layout="wide"
 )
+
 
 st.markdown("""
 <style>
@@ -188,7 +263,7 @@ def save_history(user_id, resume, job, final_score, semantic, skill, matched, mi
 
     cursor.execute("""
         INSERT INTO history 
-        (user_id, resume, job, similarity, semantic_score, skill_score, matched_skills, missing_skills)
+        (user_id, resume, job, final_score, semantic_score, skill_score, matched_skills, missing_skills)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         user_id,
@@ -289,6 +364,48 @@ def create_pdf(final_score, matched, missing, semantic, skill):
 
     return buffer
 
+
+def create_resume_pdf(resume_text):
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+
+    styles = getSampleStyleSheet()
+    title = styles["Heading1"]
+    section = styles["Heading2"]
+    normal = styles["Normal"]
+
+    content = []
+
+    # Split lines
+    lines = resume_text.split("\n")
+
+    for line in lines:
+        line = line.strip()
+
+        if not line:
+            content.append(Spacer(1, 10))
+            continue
+
+    # Markdown headers
+        if line.startswith("#"):
+            clean = line.replace("#", "").strip()
+            content.append(Paragraph(f"<b>{clean}</b>", section))
+
+    # Bullet points
+        elif line.startswith("-") or line.startswith("•"):
+                content.append(Paragraph(line.replace("-", "•"), normal))
+
+        else:
+            content.append(Paragraph(line, normal))
+
+        content.append(Spacer(1, 6))
+
+    doc.build(content)
+    buffer.seek(0)
+
+    return buffer
+
 def set_background(image_file):
     try:
         with open(image_file, "rb") as file:
@@ -310,397 +427,7 @@ def set_background(image_file):
 
 # ================= DATA =================
 
-skills_list = {
 
-"programming": [
-"python","java","c","c++","c#","go","rust","kotlin","swift","typescript","javascript","r","matlab","scala","perl"
-],
-
-"web_frontend": [
-    "html","css","sass","bootstrap","tailwind",
-    "react","angular","vue","next.js","redux",
-    "responsive design","ui development","frontend optimization"
-],
-
-"web_backend": [
-    "node.js","express","django","flask","fastapi",
-    "spring","spring boot","laravel","ruby on rails","asp.net",
-    "rest api","graphql","microservices",
-    "celery","rabbitmq","kafka","grpc",
-    "authentication","authorization","jwt","oauth"
-],
-
-"databases": [
-    "sql","mysql","postgresql","mongodb","redis",
-    "cassandra","firebase","oracle","sqlite",
-    "dynamodb","neo4j","elasticsearch",
-    "data warehousing","etl","data pipelines"
-],
-
-"data_ai": [
-    "machine learning","deep learning","nlp","computer vision",
-    "data science","data analysis","data analytics",
-    "pandas","numpy","scikit-learn","statsmodels",
-    "tensorflow","pytorch","keras","xgboost","lightgbm",
-    "transformers","llm","gpt","bert","huggingface",
-    "feature engineering","model tuning","hyperparameter tuning"
-],
-
-"cloud_devops": [
-    "aws","azure","gcp",
-    "docker","kubernetes","terraform","ansible",
-    "jenkins","github actions","gitlab ci",
-    "ci/cd","linux","bash","shell scripting",
-    "monitoring","logging","prometheus","grafana",
-    "nginx","load balancing"
-],
-
-"mobile": [
-"android","ios","react native","flutter","dart","swift ui","kotlin multiplatform"
-],
-
-"testing": [
-"unit testing","integration testing","pytest","selenium","cypress","jest","mocha"
-],
-
-"big_data": [
-"hadoop","spark","kafka","hive","airflow","flink","databricks"
-],
-
-"security": [
-    "network security","cryptography","owasp",
-    "penetration testing","ethical hacking",
-    "authentication","authorization","security testing"
-],
-
-"tools": [
-    "git","github","gitlab","jira","figma","postman",
-    "tableau","power bi","notion",
-    "vs code","intellij","eclipse",
-    "airflow","databricks"
-],
-
-"soft_skills": [
-"communication","teamwork","problem solving","leadership",
-"time management","critical thinking","adaptability"
-]
-
-}
-
-skills_list_flat = [s for category in skills_list.values() for s in category]
-
-
-skill_aliases = {
-
-# Programming
-"py":"python",
-"js":"javascript",
-"ts":"typescript",
-
-# AI
-"ml":"machine learning",
-"dl":"deep learning",
-"ai":"machine learning",
-
-# Frameworks
-"reactjs":"react",
-"nextjs":"next.js",
-"node":"node.js",
-"expressjs":"express",
-"springboot":"spring boot",
-
-# Data
-"sklearn":"scikit-learn",
-"tf":"tensorflow",
-
-# Cloud
-"aws cloud":"aws",
-"google cloud":"gcp",
-
-# Databases
-"postgres":"postgresql",
-"mongo":"mongodb",
-"nosql":"mongodb",
-
-# DevOps
-"ci cd":"ci/cd",
-
-# NLP
-"natural language processing":"nlp",
-"structured query language":"sql",
-"mysql db":"mysql",
-"postgres db":"postgresql",
-
-"mongo db":"mongodb",
-"nosql database":"mongodb",
-
-"firebase realtime db":"firebase",
-"machine learning models":"machine learning",
-"ml models":"machine learning",
-
-"deep neural networks":"deep learning",
-"neural networks":"deep learning",
-
-"text processing":"nlp",
-"language models":"nlp",
-
-"data analysis":"data science",
-"data analytics":"data science",
-
-"pandas library":"pandas",
-"numpy library":"numpy",
-"amazon web services":"aws",
-"aws ec2":"aws",
-"aws s3":"aws",
-
-"google cloud platform":"gcp",
-
-"docker containers":"docker",
-"containerization":"docker",
-
-"container orchestration":"kubernetes",
-"k8s":"kubernetes",
-
-"continuous integration":"ci/cd",
-"continuous deployment":"ci/cd",
-
-"linux os":"linux",
-"unix":"linux",
-
-# AI
-"large language models":"llm",
-"language models":"llm",
-"bert model":"bert",
-
-# Backend
-"restful api":"rest api",
-"restful apis":"rest api",
-"api development":"rest api",
-
-# DevOps
-"containerization":"docker",
-"k8s":"kubernetes",
-"continuous integration":"ci/cd",
-"continuous deployment":"ci/cd",
-
-# Data
-"data wrangling":"data analysis",
-"data visualization":"data analysis",
-
-# Cloud
-"amazon web services":"aws",
-"google cloud":"gcp",
-
-# DB
-"nosql":"mongodb",
-"relational database":"sql",
-
-# Programming
-"object oriented programming":"oop",
-"dsa":"data structures",
-"algo":"algorithms",
-
-}
-
-skill_suggestions = {
-
-# Programming
-"python":"Build automation scripts, APIs, and data projects",
-"java":"Practice OOP concepts and backend systems",
-"c++":"Focus on data structures and system-level programming",
-"c":"Learn memory management and embedded basics",
-"javascript":"Master async programming and DOM manipulation",
-"typescript":"Learn type safety and scalable frontend apps",
-"go":"Build high-performance backend services",
-"rust":"Learn safe systems programming and performance optimization",
-
-# Web Frontend
-"html":"Create semantic and accessible web pages",
-"css":"Practice responsive design and layouts",
-"sass":"Learn modular CSS and variables",
-"bootstrap":"Build responsive UI quickly",
-"tailwind":"Design modern UI using utility classes",
-"react":"Build dynamic apps using hooks and state",
-"angular":"Learn component-based frontend architecture",
-"vue":"Build reactive interfaces with Vue ecosystem",
-"next.js":"Learn SSR and performance optimization",
-
-# Backend
-"node.js":"Build scalable backend APIs",
-"express":"Create REST APIs and middleware",
-"django":"Develop secure full-stack web apps",
-"flask":"Build lightweight APIs and services",
-"fastapi":"Create high-performance APIs with Python",
-"spring":"Develop enterprise Java applications",
-"spring boot":"Build microservices with ease",
-"graphql":"Learn flexible API querying",
-"microservices":"Understand distributed system design",
-
-# Databases
-"sql":"Practice joins, indexing, and optimization",
-"mysql":"Work on relational database design",
-"postgresql":"Learn advanced SQL and performance tuning",
-"mongodb":"Build NoSQL-based applications",
-"redis":"Use caching for performance improvement",
-"cassandra":"Handle large-scale distributed data",
-"firebase":"Build real-time apps with backend-as-a-service",
-"sqlite":"Use lightweight databases for apps",
-
-# Data Science & AI
-"machine learning":"Work on real datasets and model building",
-"deep learning":"Study neural networks and CNNs",
-"nlp":"Build chatbots and text processing apps",
-"computer vision":"Work on image recognition projects",
-"data science":"Analyze and visualize real-world data",
-"pandas":"Manipulate and analyze datasets efficiently",
-"numpy":"Work with numerical computations",
-"scikit-learn":"Build ML models quickly",
-"matplotlib":"Visualize data insights",
-"seaborn":"Create advanced statistical plots",
-"tensorflow":"Build deep learning models",
-"pytorch":"Develop flexible neural networks",
-"xgboost":"Improve model performance",
-"lightgbm":"Handle large-scale ML efficiently",
-
-# DevOps & Cloud
-"aws":"Deploy scalable applications in cloud",
-"azure":"Work on Microsoft cloud services",
-"gcp":"Use Google cloud for data and apps",
-"docker":"Learn containerization and deployment",
-"kubernetes":"Manage container orchestration",
-"jenkins":"Automate CI/CD pipelines",
-"github actions":"Automate workflows and deployments",
-"terraform":"Manage infrastructure as code",
-"ansible":"Automate configuration management",
-"linux":"Master command line and server handling",
-"bash":"Write shell scripts for automation",
-"ci/cd":"Implement automated deployment pipelines",
-
-# Mobile
-"android":"Build native Android applications",
-"ios":"Develop apps for Apple devices",
-"react native":"Create cross-platform mobile apps",
-"flutter":"Build fast UI apps with Dart",
-"dart":"Learn Flutter app development",
-"swift ui":"Design modern iOS interfaces",
-
-# Testing
-"unit testing":"Write tests for code reliability",
-"pytest":"Test Python applications effectively",
-"selenium":"Automate browser testing",
-"cypress":"Perform frontend testing",
-"jest":"Test JavaScript applications",
-"mocha":"Run backend JS testing",
-
-# Big Data
-"hadoop":"Handle distributed data processing",
-"spark":"Process large datasets efficiently",
-"kafka":"Build real-time data pipelines",
-"hive":"Query big data using SQL-like language",
-"airflow":"Manage data workflows",
-"flink":"Stream data processing",
-
-# Security
-"penetration testing":"Practice ethical hacking techniques",
-"ethical hacking":"Learn vulnerability detection",
-"network security":"Secure systems and networks",
-"cryptography":"Understand encryption techniques",
-"owasp":"Learn web security standards",
-
-# Tools
-"git":"Use version control effectively",
-"github":"Collaborate on projects",
-"gitlab":"Manage CI/CD pipelines",
-"jira":"Track tasks and agile workflows",
-"figma":"Design UI/UX prototypes",
-"postman":"Test APIs efficiently",
-"tableau":"Create data dashboards",
-"power bi":"Visualize business data",
-
-# Soft Skills
-"communication":"Improve clarity in technical discussions",
-"teamwork":"Collaborate effectively in projects",
-"problem solving":"Practice coding challenges",
-"leadership":"Lead teams and decision-making",
-"time management":"Manage deadlines efficiently",
-"critical thinking":"Analyze problems logically",
-"adaptability":"Learn new technologies quickly"
-}
-
-
-jobs = [
-
-{"title":"Machine Learning Engineer","skills":["python","machine learning","tensorflow","pytorch","sql"]},
-{"title":"Data Scientist","skills":["python","data science","machine learning","pandas","numpy"]},
-{"title":"AI Engineer","skills":["python","deep learning","nlp","tensorflow","pytorch"]},
-
-{"title":"Frontend Developer","skills":["javascript","react","html","css","typescript"]},
-{"title":"React Developer","skills":["react","javascript","redux","html","css"]},
-{"title":"Angular Developer","skills":["angular","typescript","html","css"]},
-
-{"title":"Backend Developer","skills":["python","django","flask","sql","rest api"]},
-{"title":"Node.js Developer","skills":["node.js","express","mongodb","rest api"]},
-{"title":"Java Developer","skills":["java","spring","spring boot","sql"]},
-
-{"title":"Full Stack Developer","skills":["javascript","react","node.js","mongodb","html","css"]},
-
-{"title":"DevOps Engineer","skills":["docker","kubernetes","aws","jenkins","linux"]},
-{"title":"Cloud Engineer","skills":["aws","azure","gcp","terraform"]},
-
-{"title":"Mobile App Developer","skills":["flutter","dart","android","ios"]},
-{"title":"Android Developer","skills":["android","kotlin","java"]},
-{"title":"iOS Developer","skills":["ios","swift","swift ui"]},
-
-{"title":"Data Analyst","skills":["sql","excel","python","power bi"]},
-{"title":"Business Analyst","skills":["sql","excel","communication"]},
-
-{"title":"Cybersecurity Analyst","skills":["network security","penetration testing","cryptography"]},
-{"title":"Ethical Hacker","skills":["ethical hacking","penetration testing","owasp"]},
-
-{"title":"Big Data Engineer","skills":["spark","hadoop","kafka"]},
-{"title":"Data Engineer","skills":["python","sql","etl","airflow"]},
-
-{"title":"QA Engineer","skills":["testing","selenium","pytest"]},
-{"title":"Automation Tester","skills":["selenium","cypress","pytest"]},
-
-{"title":"System Administrator","skills":["linux","bash","networking"]},
-{"title":"Site Reliability Engineer","skills":["linux","docker","kubernetes","ci/cd"]},
-
-{"title":"Game Developer","skills":["c++","unity","unreal engine"]},
-{"title":"Embedded Systems Engineer","skills":["c","c++","microcontrollers"]},
-
-{"title":"UI/UX Designer","skills":["figma","design","user research"]},
-
-{"title":"Blockchain Developer","skills":["solidity","ethereum","web3"]},
-{"title":"AR/VR Developer","skills":["unity","c#","vr"]},
-
-{"title":"Software Engineer","skills":["java","python","data structures","algorithms"]},
-{"title":"Senior Software Engineer","skills":["system design","microservices","scalability"]},
-
-{"title":"Product Manager","skills":["communication","roadmap","agile"]},
-{"title":"Technical Lead","skills":["leadership","architecture","scalability"]},
-
-{"title":"MLOps Engineer","skills":["python","mlops","docker","kubernetes","ci/cd"]},
-
-{"title":"Prompt Engineer","skills":["llm","prompt engineering","nlp","gpt"]},
-
-{"title":"AI Research Engineer","skills":["deep learning","transformers","pytorch","research"]},
-
-{"title":"Platform Engineer","skills":["kubernetes","terraform","cloud","devops"]},
-
-{"title":"API Developer","skills":["rest api","graphql","node.js","fastapi"]},
-
-{"title":"Security Engineer","skills":["network security","siem","incident response"]},
-
-{"title":"Data Platform Engineer","skills":["spark","kafka","airflow","data pipelines"]},
-
-{"title":"Cloud Architect","skills":["aws","azure","architecture","scalability"]},
-
-{"title":"Frontend Architect","skills":["react","architecture","performance"]},
-
-{"title":"Backend Architect","skills":["microservices","system design","scalability"]}
-
-]
 
 # ================= FUNCTIONS =================
 
@@ -713,21 +440,114 @@ def extract_text_from_pdf(file):
             text += page_text
     return text
 
+def generate_resume_from_jd(job_text):
+    skills = extract_skills(job_text)
+
+    summary = f"""
+Motivated and detail-oriented professional with skills in {', '.join(skills[:5])}.
+Passionate about building scalable applications and solving real-world problems.
+"""
+
+    skills_section = "\n".join([f"- {s}" for s in skills])
+
+    projects = f"""
+- Developed projects using {skills[0] if skills else "modern technologies"}
+- Built applications demonstrating problem-solving and development skills
+"""
+
+    resume = f"""
+===== GENERATED RESUME =====
+
+SUMMARY:
+{summary}
+
+SKILLS:
+{skills_section}
+
+PROJECTS:
+{projects}
+
+EDUCATION:
+Bachelor’s Degree in Computer Science (or relevant field)
+"""
+
+    return resume
+
+def generate_resume_ai(job_text):
+    try:
+       prompt = f"""
+       You are a TOP 1% professional resume writer.
+ 
+       Rewrite a resume based on the job description.
+
+       STRICT RULES:
+
+       - NEVER use generic phrases (motivated, passionate, hardworking)
+       - EVERY bullet must include measurable impact (% improvement, time saved, accuracy)
+       - Use strong action verbs (Built, Optimized, Reduced, Designed)
+       - Tailor EXACTLY to the job description
+       - ATS optimized
+
+       FORMAT STRICTLY:
+
+       # PROFESSIONAL SUMMARY
+       2-3 lines with ROLE + IMPACT
+
+       # TECHNICAL SKILLS
+       - Programming:
+       - Tools:
+       - Data:
+       - Cloud:
+
+       # PROJECT EXPERIENCE
+       Include 2-3 projects:
+       - Project Name
+       - 2 bullet points with METRICS
+
+       # EXPERIENCE
+       Entry-level but IMPACTFUL
+
+       # EDUCATION
+
+       Job Description:
+       {job_text}
+
+       Return ONLY markdown.
+       """
+
+       response = gemini_model.generate_content(prompt) 
+       return response.text if response and hasattr(response, "text") else "AI generation failed"
+    
+
+    except Exception as e:
+        st.error(f"AI failed: {e}")   # 👈 ADD THIS
+        return generate_resume_from_jd(job_text)
+
+
 def extract_skills(text):
     text = text.lower()
+
+    # Apply aliases safely
+    for alias, actual in skill_aliases.items():
+        text = re.sub(rf"\b{alias}\b", actual, text)
+
     found = set()
 
-    # Check direct skills
     for skill in skills_list_flat:
-        if skill in text:
+         if len(skill) > 2 and re.search(rf"\b{skill}\b", text):
             found.add(skill)
 
-    # Check aliases
-    for alias, actual in skill_aliases.items():
-        if alias in text:
-            found.add(actual)
-
     return list(found) if found else ["general"]
+
+def normalize_skills(skills):
+    normalized = set()
+    for s in skills:
+        s = s.lower()
+        if s in skill_aliases:
+            normalized.add(skill_aliases[s])
+        else:
+            normalized.add(s)
+    return normalized
 
 # ================= MODEL =================
 
@@ -743,70 +563,58 @@ def get_embedding(text):
 
 
 def calculate_score(similarity, skill_score, matched, missing, job_skills):
-    penalty = 0
 
-    critical_skills = job_skills[:2]
-    for skill in critical_skills:
-        if skill in missing:
-            penalty += 0.1
+    # Base weighted score
+    final = (0.6 * similarity) + (0.4 * skill_score)
 
-    bonus = 0
-    if len(matched) > len(job_skills) * 0.7:
-        bonus = 0.05
+    # Penalty for missing critical skills
+    if len(job_skills) > 0:
+        missing_ratio = len(missing) / len(job_skills)
+        final -= missing_ratio * 0.2
 
-    final = (0.6 * similarity) + (0.4 * skill_score) + bonus - penalty
-
+    # Clamp
     return max(0, min(final, 1))
 
+def match_resume_job(resume, job, resume_emb=None, resume_skills=None):
 
-def match_resume_job(resume, job):
+    if resume_emb is None:
+        resume_emb = get_embedding(resume)
 
-    resume_emb = get_embedding(resume)
-    job_emb = get_embedding(job)
+    if resume_skills is None:
+        resume_skills = extract_skills(resume)
+
+    job_emb = get_embedding("Job Description: " + job)
 
     similarity = cosine_similarity(resume_emb, job_emb)[0][0]
 
-    resume_skills = extract_skills(resume)
     job_skills = extract_skills(job)
 
-    matched = list(set(resume_skills) & set(job_skills))
-    missing = [s for s in job_skills if s not in resume_skills]
+    resume_set = normalize_skills(resume_skills)
+    job_set = normalize_skills(job_skills)
+    
+    matched = list(resume_set & job_set)
+    missing = list(job_set - resume_set)
+    skill_score = len(matched) / (len(job_set) if job_set else 1)
 
-    skill_score = len(matched) / (len(job_skills) if job_skills else 1)
-
-    features = [[
+    final_score = calculate_score(
         similarity,
         skill_score,
-        len(matched),
-        len(missing)
-    ]]
+        matched,
+        missing,
+        job_skills
+    )
 
-    if ml_model:
-        pred = ml_model.predict(features)[0]
-
-        if pred == 1:
-            final_score = 0.7 + (0.2 * similarity)
-        else:
-            final_score = 0.3 * similarity
-    else:
-        final_score = calculate_score(
-            similarity,
-            skill_score,
-            matched,
-            missing,
-            job_skills
-        )
-        final_score = max(0, min(final_score, 1))
+    ats_score = min(1.0, (len(matched) / (len(job_set) if job_set else 1)) * 1.2)
 
     return {
         "final_score": round(final_score, 2),
         "semantic_score": round(similarity, 2),
         "skill_score": round(skill_score, 2),
+        "ats_score": round(ats_score, 2),
         "matched_skills": matched,
         "missing_skills": missing,
         "top_missing": missing[:3]
     }
-
 # ================= LOGIN =================
 
 if "user" not in st.session_state:
@@ -853,7 +661,7 @@ elif menu == "Login":
 # ================= MAIN APP =================
 
 if st.session_state.get("logged_in"):
-    st.success("Welcome back! 👋") 
+    st.success("Welcome back! 👋")
 
     if st.button("Logout"):
         st.session_state.clear()
@@ -874,6 +682,39 @@ if st.session_state.get("logged_in"):
 
     uploaded_file = st.file_uploader("📄 Upload Resume", type=["pdf"])
     job = st.text_area("🧾 Paste Job Description")
+    if job:
+        st.session_state.job = job
+
+    mode = st.selectbox(
+        "Resume Generation Mode",
+        ["Standard (Offline)", "AI Enhanced"]
+    )
+
+    if st.button("🧠 Generate Resume from JD"):
+        if job:
+
+            with st.spinner("Generating resume..."):
+
+                if mode == "AI Enhanced":
+                    generated_resume = generate_resume_ai(job)
+                else:
+                    generated_resume = generate_resume_from_jd(job)
+
+            st.markdown('<div class="glass">', unsafe_allow_html=True)
+            st.markdown("### 📄 Generated Resume")
+            st.markdown(generated_resume)
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            resume_pdf = create_resume_pdf(generated_resume)
+
+            st.download_button(
+                "📄 Download Resume PDF",
+                resume_pdf,
+                file_name="generated_resume.pdf"
+            )
+
+        else:
+            st.warning("Please enter job description first")
 
     if not uploaded_file and not job:
         st.markdown("""
@@ -895,218 +736,422 @@ if st.session_state.get("logged_in"):
 
     if uploaded_file:
         resume = extract_text_from_pdf(uploaded_file)
+        st.session_state.resume = resume
         st.success("Resume uploaded successfully!")
+
+    resume = st.session_state.get("resume", "")
+    job = st.session_state.get("job", "")
 
     if st.button("🚀 Analyze Resume & Get Insights"):
 
-        if resume and job:
-
+        if resume:
+            if not job:
+                st.warning("Please enter a job description")
+                st.stop()
             with st.spinner("🔍 Analyzing your resume..."):
+
+                # 🔥 Generate ideal resume from JD (AI benchmark)
+                ideal_resume = generate_resume_ai(job)
             
                 resume_lower = resume.lower()
                 job_lower = job.lower()
 
                 resume_emb = get_embedding(resume_lower)
-                data = match_resume_job(resume_lower, job_lower)
+                st.session_state.resume_emb = resume_emb  
+                resume_skills = extract_skills(resume_lower)
 
-            st.success("🎉 Analysis Complete!")
-            st.balloons()
-
-
-            final_score = data["final_score"]
-            similarity = data["semantic_score"]
-            skill_score = data["skill_score"]
-            matched = data["matched_skills"]
-            missing = data["missing_skills"]
-
-            top_missing = data.get("top_missing", missing[:3])
-
-            resume_skills = extract_skills(resume_lower)
-            job_skills = extract_skills(job_lower)
-
-            st.markdown('<div class="glass">', unsafe_allow_html=True)
-
-            left, right = st.columns([2, 1])
-
-            with left:
-                st.markdown("## 📊 Analysis Results")
-
-                col1, col2, col3 = st.columns(3)
-
-                with col1:
-                    st.metric("🎯 Final", f"{final_score*100:.1f}%")
-                with col2:
-                    st.metric("🧠 Semantic", f"{similarity*100:.1f}%")
-                with col3:
-                    st.metric("🧩 Skills", f"{skill_score*100:.1f}%")
-
-                st.progress(min(int(final_score * 100), 100))
-
-            with right:
-                st.markdown("### 🚀 Suggestions")
-                if missing:
-                    for s in top_missing:
-                        st.markdown(f"**{s}**")
-                        st.caption(skill_suggestions.get(s, "Improve this skill"))
-                else:
-                    st.success("🎉 No major gaps!")
-
-            st.markdown('</div>', unsafe_allow_html=True)
-            st.caption("🤖 ML model used" if ml_model else "⚙️ Rule-based scoring")
-
-            if ml_model:
-                st.info("Final score predicted using Machine Learning model")
-            else:
-                st.info("Final score calculated using rule-based method")
-
-            user_id = st.session_state.user
-            save_history(
-                user_id,
-                resume[:1000],
-                job,
-                final_score,
-                similarity,
-                skill_score,
-                matched,
-                missing
-            )
-
-            st.subheader("📊 Score Visualization")
-
-            chart_data = pd.DataFrame({
-                "Scores": [similarity, skill_score, final_score]
-            }, index=["Semantic", "Skill", "Final"])
-
-            fig = px.bar(
-                chart_data,
-                x=chart_data.index,
-                y="Scores",
-                title="📊 Score Breakdown",
-                text_auto=True
-            )
-
-            fig.update_layout(
-                plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)',
-                font=dict(color="white")
-            )
-
-            st.plotly_chart(fig, use_container_width=True)
-            st.markdown("---")  
-
-            st.subheader("🎯 Skill Match Radar")
-
-            labels = ["Semantic", "Skill", "Final"]
-
-            values = [ 
-                similarity,
-                skill_score,
-                final_score
-            ]
-
-            fig = go.Figure()
-
-            fig.add_trace(go.Scatterpolar(
-                r=values,
-                theta=labels,
-                fill='toself'
-            ))
-
-            fig.update_layout(
-               polar=dict(
-                   radialaxis=dict(visible=True, range=[0,1])
-                ),
-                showlegend=False
-            )
-
-            st.plotly_chart(fig, use_container_width=True)
-
-            # Skills
-            # ================= PREMIUM SKILL UI =================
-
-            st.markdown("### 🧠 Resume Skills")
-            st.markdown(
-                "".join([f"<span class='skill-chip resume-chip'>{s}</span>" for s in resume_skills]),
-                unsafe_allow_html=True
-            )
-
-            st.markdown("### 💼 Job Skills")
-            st.markdown(
-                "".join([f"<span class='skill-chip job-chip'>{s}</span>" for s in job_skills]),
-                unsafe_allow_html=True
-            )
-
-            with st.expander("📄 Detailed Skill Analysis"):
-
-                st.markdown("### ✅ Matched Skills")
-                st.markdown(
-                    "".join([f"<span class='skill-chip match-chip'>{s}</span>" for s in matched]),
-                    unsafe_allow_html=True
+                data = match_resume_job(resume_lower, job_lower, resume_emb, resume_skills)
+                ideal_data = match_resume_job(
+                    ideal_resume.lower(),
+                    job_lower
                 )
-
-                st.markdown("### 🚨 Missing Skills")
-                st.markdown(
-                    "".join([f"<span class='skill-chip miss-chip'>{s}</span>" for s in missing]),
-                    unsafe_allow_html=True
-                )
-
-            if len(missing) > 5:
-                st.warning("🚨 You are missing several key skills for this role")
-            elif len(missing) > 2:
-                st.info("⚡ You are close! Improve a few important skills")
-            else:
-                st.success("🔥 Strong match! Only minor improvements needed")
-
-            # Job matching
-            st.markdown("---")
-            st.subheader("Top Jobs")
-
-            scores = []
-            
-            for j in jobs:
-                job_text = j["title"] + " " + " ".join(j["skills"])
-    
-                job_emb_temp = get_embedding(job_text)
-                semantic_score = cosine_similarity(resume_emb, job_emb_temp)[0][0]
-
-                job_skills_temp = j["skills"]
-
-                matched_temp = len(set(resume_skills) & set(job_skills_temp))
-                total_temp = len(job_skills_temp) if job_skills_temp else 1
-
-                skill_score_temp = matched_temp / total_temp
-
-                score = 0.6 * semantic_score + 0.4 * skill_score_temp
-                scores.append((j["title"], score))
-                
-            scores.sort(key=lambda x: x[1], reverse=True) 
-
-            st.subheader("🏆 Top Job Matches")
-
-            for j, s in scores[:3]:
-                st.markdown(f"""
-                <div class="glass">
-                     <h3>💼 {j}</h3>
-                     <p>Match Score: <b>{s*100:.1f}%</b></p>
-                </div>
-                """, unsafe_allow_html=True)
-
-                st.progress(float(s))
-
-            # PDF
-            pdf = create_pdf(
-                final_score,
-                matched,
-                missing,
-                similarity,
-                skill_score
-            )
-
-            st.download_button("Download Professional Report", pdf, "report.pdf")
-
+                st.session_state.analysis_done = True
+                st.session_state.data = data
+                st.session_state.ideal_data = ideal_data
+                st.session_state.ideal_resume = ideal_resume
         else:
             st.warning("Enter both Resume and Job")
         
+
+                # 🔥 Analyze ideal resume
+                
+
+    if st.session_state.get("analysis_done"):
+
+        data = st.session_state.data
+        ideal_data = st.session_state.ideal_data
+        ideal_resume = st.session_state.ideal_resume
+
+        st.success("🎉 Analysis Complete!")
+        st.balloons()
+
+        st.markdown("### 🎯 Recommendation")
+
+        if data["final_score"] > 0.7:
+            st.success("You can confidently apply for this role.")
+        elif data["final_score"] > 0.4:
+            st.info("You are close — improve key skills before applying.")
+        else:
+            st.error("Improve your resume significantly before applying.")
+
+        final_score = data["final_score"]
+        similarity = data["semantic_score"]
+        skill_score = data["skill_score"]
+        matched = data["matched_skills"]
+        missing = data["missing_skills"]
+
+        top_missing = data.get("top_missing", missing[:3])
+
+        resume_lower = st.session_state.get("resume", "").lower()
+        job_lower = st.session_state.get("job", "").lower()
+
+        resume_skills = extract_skills(resume_lower)
+        job_skills = extract_skills(job_lower)
+
+        left, right = st.columns([2, 1])
+
+        with left:
+            st.markdown("## 📊 Analysis Results")
+
+            col1, col2, col3, col4 = st.columns(4)
+
+            with col1:
+                st.metric("🎯 Final", f"{final_score*100:.1f}%")
+            with col2:
+                st.metric("🧠 Semantic", f"{similarity*100:.1f}%")
+            with col3:
+                st.metric("🧩 Skills", f"{skill_score*100:.1f}%")
+            with col4:
+                st.metric("📄 ATS", f"{data['ats_score']*100:.1f}%")
+
+            st.progress(min(int(final_score * 100), 100))
+
+            if final_score > 0.75:
+                st.success("🟢 Strong Candidate")
+            elif final_score > 0.5:
+                st.info("🟡 Moderate Match")
+            else:
+                st.error("🔴 Needs Improvement")
+
+        with right:
+            st.markdown("### 🚀 Suggestions")
+
+            if missing:
+                for s in top_missing:
+                    s_clean = s.strip().lower()
+
+                    st.markdown(f"**{s}**")
+
+                    info = skill_suggestions.get(s_clean)
+
+                    if info:
+                        st.caption(info["suggestion"])
+                        st.markdown(f"[📚 Learn {s}]({info['link']})")
+                    else:
+                        st.caption("Improve this skill")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        st.caption("⚙️ Hybrid scoring (Semantic + Skill-based)")
+
+            # ================= BENCHMARK =================
+
+        st.markdown("## 🧠 Benchmark Comparison")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("### 📄 Your Resume")
+            st.metric("Score", f"{data['final_score']*100:.1f}%")
+
+        with col2:
+            st.markdown("### 🤖 Ideal Resume")
+            st.metric("Score", f"{ideal_data['final_score']*100:.1f}%")
+
+            # ================= GAP ANALYSIS =================
+
+        st.markdown("## 🚨 Gap Analysis")
+        user_skills_set = normalize_skills(resume_skills)
+        ideal_skills_set = normalize_skills(extract_skills(ideal_resume))
+
+        gap = ideal_skills_set - user_skills_set
+
+        if gap:
+            st.warning("You are missing key skills compared to ideal resume:")
+
+            for g in list(gap)[:5]:
+                st.markdown(f"- {g}")
+        else:
+            st.success("Your resume aligns well with the ideal profile!")
+
+
+        st.markdown("## ✨ Auto Resume Improvement")
+
+        if st.button("🚀 Improve My Resume"):
+            improve_prompt = f"""
+            You are an expert resume optimizer.
+
+            Rewrite the resume to MATCH the job perfectly.
+
+            Rules:
+            - Add missing skills from JD
+            - Add metrics (% improvement, speed, accuracy)
+            - Use strong verbs (Built, Optimized, Reduced)
+            - Remove weak phrases
+
+            Job:
+            {job}
+
+            Resume:
+            {resume}
+
+            Make it look like a TOP 5% candidate.
+            """
+            try:
+                response = gemini_model.generate_content(improve_prompt)
+                improved = response.text if response and hasattr(response, "text") else "AI improvement failed"
+
+                st.markdown("### 🔥 Improved Resume")
+                st.markdown(improved)
+
+            except Exception as e:
+                st.error(f"AI failed: {e}")
+            # ================= IMPROVEMENT METRIC =================
+
+        st.markdown("## 📈 Improvement Potential")
+
+        improvement = max(0, (ideal_data["final_score"] - data["final_score"]) * 100)
+
+        if improvement > 40:
+            st.error(f"🚨 High improvement needed: {improvement:.1f}%")
+        elif improvement > 20:
+            st.warning(f"⚡ Moderate improvement: {improvement:.1f}%")
+        elif improvement > 0:
+            st.info(f"✅ Minor improvement: {improvement:.1f}%")
+        else:
+            st.success("🔥 Already optimized")
+
+
+        st.markdown("## 🧠 AI Insight")
+
+        insight_prompt = f"""
+        You are a senior hiring manager.
+
+        Analyze the candidate resume vs job description.
+
+        Give:
+
+        1. Strengths (based on JD match)
+        2. Weaknesses (missing critical skills)
+        3. Specific improvements (what EXACTLY to add/change)
+
+        Keep it concise and professional.
+
+        Job:
+        {job}
+
+        Resume:
+        {resume[:1500]}
+        Provide actionable feedback to improve this resume for the given job.
+        """
+
+        try:
+            response = gemini_model.generate_content(insight_prompt)
+            improved = response.text if response and hasattr(response, "text") else "AI insight failed"
+            st.markdown(improved)
+
+        except Exception as e:
+            st.error(f"AI insight failed: {e}")
+
+            # ================= IDEAL RESUME VIEW =================
+
+        with st.expander("📄 View Ideal Resume (AI Generated Benchmark)"):
+            st.markdown(ideal_resume)
+
+
+
+        st.markdown("## 📊 Score Comparison")
+
+        compare_df = pd.DataFrame({
+            "Category": ["Your Resume", "Ideal Resume"],
+            "Score": [data["final_score"]*100, ideal_data["final_score"]*100]
+        })
+
+        fig_compare = px.bar(
+            compare_df,
+            x="Category",
+            y="Score",
+            text="Score",
+            title="Your vs Ideal Resume Score"
+        )
+
+        fig_compare.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+
+        st.plotly_chart(fig_compare, use_container_width=True)
+
+        st.markdown("## 📈 Improvement Gauge")
+
+        fig_gauge = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=improvement,
+            title={'text': "Improvement Potential (%)"},
+                gauge={
+                'axis': {'range': [0, 100]},
+                'bar': {'color': "green"},
+            }
+        ))
+
+        st.plotly_chart(fig_gauge, use_container_width=True)
+
+
+        st.markdown("## 🎯 Skill Gap Visualization")
+
+        gap_list = list(gap)[:5]
+
+        if gap_list:
+            gap_df = pd.DataFrame({
+                "Skill": gap_list,
+                "Missing": [1]*len(gap_list)
+            })
+
+            fig_gap = px.bar(
+                gap_df,
+                x="Skill",
+                y="Missing",
+                title="Top Missing Skills"
+            )
+
+            st.plotly_chart(fig_gap, use_container_width=True)
+        else:
+            st.success("No major skill gaps 🎉")
+
+        user_id = st.session_state.user
+        save_history(
+            user_id,
+            resume[:1000],
+            job,
+            final_score,
+            similarity,
+            skill_score,
+            matched,
+            missing
+        )
+
+
+        st.subheader("🎯 Skill Match Radar")
+
+        labels = ["Semantic", "Skill", "Final"]
+
+        values = [ 
+            similarity,
+            skill_score,
+            final_score
+        ]
+
+        fig = go.Figure()
+
+        fig.add_trace(go.Scatterpolar(
+            r=values,
+            theta=labels,
+            fill='toself'
+        ))
+
+        fig.update_layout(
+            polar=dict(
+                radialaxis=dict(visible=True, range=[0,1])
+            ),
+            showlegend=False
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Skills
+        # ================= PREMIUM SKILL UI =================
+
+        st.markdown("### 🧠 Resume Skills")
+        st.markdown(
+            "".join([f"<span class='skill-chip resume-chip'>{s}</span>" for s in resume_skills]),
+            unsafe_allow_html=True
+        )
+
+        st.markdown("### 💼 Job Skills")
+        st.markdown(
+            "".join([f"<span class='skill-chip job-chip'>{s}</span>" for s in job_skills]),
+            unsafe_allow_html=True
+        )
+
+        with st.expander("📄 Detailed Skill Analysis"):
+
+            st.markdown("### ✅ Matched Skills")
+            st.markdown(
+                "".join([f"<span class='skill-chip match-chip'>{s}</span>" for s in matched]),
+                unsafe_allow_html=True
+            )
+
+            st.markdown("### 🚨 Missing Skills")
+            st.markdown(
+                "".join([f"<span class='skill-chip miss-chip'>{s}</span>" for s in missing]),
+                unsafe_allow_html=True
+            )
+
+        if len(missing) > 5:
+            st.warning("🚨 You are missing several key skills for this role")
+        elif len(missing) > 2:
+            st.info("⚡ You are close! Improve a few important skills")
+        else:
+            st.success("🔥 Strong match! Only minor improvements needed")
+
+        # Job matching
+        st.markdown("---")
+
+        resume_emb = st.session_state.get("resume_emb")
+
+        scores = []
+
+        for j in jobs:
+            job_text = f"""
+            Role: {j['title']}
+            Skills: {', '.join(j['skills'])}
+            """
+
+            data_temp = match_resume_job(resume_lower, job_text, resume_emb, resume_skills)
+            score = (data_temp["final_score"] * 0.7) + (data_temp["skill_score"] * 0.3)
+
+            scores.append((j["title"], score)) 
+        scores.sort(key=lambda x: x[1], reverse=True)
+
+        st.subheader("🏆 Top Job Matches")
+
+        for job_title, s in scores[:3]:
+            st.markdown(f"""
+            <div class="glass">
+                <h3>💼 {job_title}</h3>
+                <p>Match Score: <b>{s*100:.1f}%</b></p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.progress(float(s))
+        
+            for j in jobs:
+                if j["title"] == job_title:
+                    common = set(resume_skills) & set(j["skills"])
+                    if common:
+                        st.caption(f"Matched skills: {', '.join(list(common)[:3])}")
+                    break
+
+            # PDF
+        pdf = create_pdf(
+            final_score,
+            matched,
+            missing,
+            similarity,
+            skill_score
+        )
+
+        st.download_button("Download Professional Report", pdf, "report.pdf")            
+
+        st.markdown('<div class="glass">', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    
     # ===== 📊 ADD HISTORY BLOCK HERE =====
     st.markdown("---")
     st.subheader("📊 Your Past Analyses")
@@ -1118,7 +1163,7 @@ if st.session_state.get("logged_in"):
     user_id = st.session_state.user
 
     cursor.execute("""
-        SELECT resume, job, similarity, semantic_score, skill_score, matched_skills, missing_skills, created_at
+        SELECT resume, job, final_score, semantic_score, skill_score, matched_skills, missing_skills, created_at
         FROM history
         WHERE user_id=?
         ORDER BY created_at DESC
@@ -1137,7 +1182,7 @@ if st.session_state.get("logged_in"):
         except:
             continue
 
-    top_gaps = Counter(all_missing).most_common(5)
+    top_gaps = list(set(all_missing))[:5]
     conn.close()
 
     rows = rows[:9]   
@@ -1252,8 +1297,8 @@ if st.session_state.get("logged_in"):
     st.subheader("🚨 Your Top Skill Gaps")
 
     if top_gaps:
-        for skill, count in top_gaps:
-            st.write(f"{skill} → missing {count} times")
+        for skill in top_gaps:
+            st.write(f"{skill}")
     else:
         st.info("No major skill gaps detected yet")
       

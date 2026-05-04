@@ -15,20 +15,7 @@ def create_tables():
     )
     """)
 
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS resumes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        content TEXT
-    )
-    """)
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS jobs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        description TEXT
-    )
-    """)
+    
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS history (
@@ -36,7 +23,7 @@ def create_tables():
         user_id INTEGER,
         resume TEXT,
         job TEXT,
-        similarity REAL,
+        final_score REAL,
         semantic_score REAL,
         skill_score REAL,
         matched_skills TEXT,
