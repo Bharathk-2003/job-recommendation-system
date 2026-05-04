@@ -7,3 +7,4 @@ sentence-transformers
 PyPDF2
 reportlab
 bcrypt
+google.generativeai
